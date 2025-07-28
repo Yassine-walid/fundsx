@@ -8,9 +8,15 @@ import {
   type RecurringTransaction,
   type InsertRecurringTransaction,
   type SalaryAllocation,
-  type InsertSalaryAllocation
+  type InsertSalaryAllocation,
+  users,
+  transactions,
+  savingsGoals,
+  recurringTransactions,
+  salaryAllocations
 } from "@shared/schema";
-import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq, and, gte, lte } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -42,247 +48,286 @@ export interface IStorage {
   createOrUpdateSalaryAllocation(allocation: InsertSalaryAllocation): Promise<SalaryAllocation>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private transactions: Map<string, Transaction>;
-  private savingsGoals: Map<string, SavingsGoal>;
-  private recurringTransactions: Map<string, RecurringTransaction>;
-  private salaryAllocations: Map<string, SalaryAllocation>;
-
-  constructor() {
-    this.users = new Map();
-    this.transactions = new Map();
-    this.savingsGoals = new Map();
-    this.recurringTransactions = new Map();
-    this.salaryAllocations = new Map();
-    
-    // Initialize with demo user and data
-    this.initializeDemoData();
-  }
-
+export class DatabaseStorage implements IStorage {
   private async initializeDemoData() {
+    // Check if demo user already exists
+    const existingUser = await this.getUserByUsername("demo");
+    if (existingUser) {
+      return; // Demo data already exists
+    }
+
     // Create demo user
-    const demoUser: User = {
-      id: "demo-user-1",
+    const demoUser = await this.createUser({
       username: "demo",
       password: "password"
-    };
-    this.users.set(demoUser.id, demoUser);
+    });
 
     // Create demo salary allocation
-    const salaryAllocation: SalaryAllocation = {
-      id: randomUUID(),
+    await this.createOrUpdateSalaryAllocation({
       userId: demoUser.id,
-      monthlySalary: "5200.00",
-      essentials: "60.00",
-      savings: "25.00",
-      lifestyle: "15.00",
-      createdAt: new Date()
-    };
-    this.salaryAllocations.set(demoUser.id, salaryAllocation);
+      monthlySalary: 5200,
+      essentials: 60,
+      savings: 25,
+      lifestyle: 15
+    });
 
     // Create demo savings goals
-    const emergencyFund: SavingsGoal = {
-      id: randomUUID(),
+    await this.createSavingsGoal({
       userId: demoUser.id,
       name: "Emergency Fund",
-      targetAmount: "10000.00",
-      currentAmount: "3500.00",
-      monthlyTarget: "500.00",
-      createdAt: new Date()
-    };
-    this.savingsGoals.set(emergencyFund.id, emergencyFund);
+      targetAmount: 10000,
+      currentAmount: 3500,
+      monthlyTarget: 500
+    });
 
-    const carGoal: SavingsGoal = {
-      id: randomUUID(),
+    await this.createSavingsGoal({
       userId: demoUser.id,
       name: "New Car",
-      targetAmount: "25000.00",
-      currentAmount: "8200.00",
-      monthlyTarget: "800.00",
-      createdAt: new Date()
-    };
-    this.savingsGoals.set(carGoal.id, carGoal);
+      targetAmount: 25000,
+      currentAmount: 8200,
+      monthlyTarget: 800
+    });
 
-    const vacationGoal: SavingsGoal = {
-      id: randomUUID(),
+    await this.createSavingsGoal({
       userId: demoUser.id,
       name: "Vacation",
-      targetAmount: "5000.00",
-      currentAmount: "1800.00",
-      monthlyTarget: "300.00",
-      createdAt: new Date()
-    };
-    this.savingsGoals.set(vacationGoal.id, vacationGoal);
+      targetAmount: 5000,
+      currentAmount: 1800,
+      monthlyTarget: 300
+    });
+
+    // Create some sample transactions
+    const today = new Date();
+    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    await this.createTransaction({
+      userId: demoUser.id,
+      type: "income",
+      amount: 5200,
+      category: "Salary",
+      description: "Monthly Salary",
+      date: currentMonth
+    });
+
+    await this.createTransaction({
+      userId: demoUser.id,
+      type: "expense",
+      amount: 1200,
+      category: "Bills & Utilities",
+      description: "Rent Payment",
+      date: new Date(currentMonth.getTime() + 86400000) // next day
+    });
+
+    await this.createTransaction({
+      userId: demoUser.id,
+      type: "expense",
+      amount: 65,
+      category: "Food & Dining",
+      description: "Grocery Shopping",
+      date: new Date(currentMonth.getTime() + 172800000) // 2 days later
+    });
+
+    await this.createTransaction({
+      userId: demoUser.id,
+      type: "expense",
+      amount: 45,
+      category: "Transport",
+      description: "Gas Station",
+      date: new Date(currentMonth.getTime() + 259200000) // 3 days later
+    });
+
+    // Create sample recurring transactions
+    await this.createRecurringTransaction({
+      userId: demoUser.id,
+      type: "expense",
+      amount: 1200,
+      category: "Rent",
+      description: "Monthly Rent",
+      frequency: "monthly",
+      nextDueDate: new Date(today.getFullYear(), today.getMonth() + 1, 1)
+    });
+
+    await this.createRecurringTransaction({
+      userId: demoUser.id,
+      type: "expense",
+      amount: 89,
+      category: "Utilities",
+      description: "Internet Bill",
+      frequency: "monthly",
+      nextDueDate: new Date(today.getFullYear(), today.getMonth(), 15)
+    });
+  }
+
+  constructor() {
+    // Initialize demo data when the storage is created
+    this.initializeDemoData().catch(console.error);
   }
 
   // User methods
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
 
   // Transaction methods
   async getTransactions(userId: string): Promise<Transaction[]> {
-    return Array.from(this.transactions.values())
-      .filter(transaction => transaction.userId === userId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return await db.select()
+      .from(transactions)
+      .where(eq(transactions.userId, userId))
+      .orderBy(transactions.date);
   }
 
   async getTransactionsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<Transaction[]> {
-    return Array.from(this.transactions.values())
-      .filter(transaction => 
-        transaction.userId === userId &&
-        new Date(transaction.date) >= startDate &&
-        new Date(transaction.date) <= endDate
+    return await db.select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          gte(transactions.date, startDate),
+          lte(transactions.date, endDate)
+        )
       )
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      .orderBy(transactions.date);
   }
 
   async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
-    const id = randomUUID();
-    const transaction: Transaction = {
+    const [transaction] = await db.insert(transactions).values({
       ...insertTransaction,
-      id,
       amount: insertTransaction.amount.toString(),
-      date: new Date(insertTransaction.date),
-      createdAt: new Date()
-    };
-    this.transactions.set(id, transaction);
+      date: new Date(insertTransaction.date)
+    }).returning();
     return transaction;
   }
 
   async updateTransaction(id: string, updateData: Partial<InsertTransaction>): Promise<Transaction | undefined> {
-    const transaction = this.transactions.get(id);
-    if (!transaction) return undefined;
+    const updateValues: any = { ...updateData };
+    if (updateData.amount) updateValues.amount = updateData.amount.toString();
+    if (updateData.date) updateValues.date = new Date(updateData.date);
 
-    const updated = {
-      ...transaction,
-      ...updateData,
-      ...(updateData.amount && { amount: updateData.amount.toString() }),
-      ...(updateData.date && { date: new Date(updateData.date) })
-    };
-    this.transactions.set(id, updated);
-    return updated;
+    const [transaction] = await db.update(transactions)
+      .set(updateValues)
+      .where(eq(transactions.id, id))
+      .returning();
+    return transaction || undefined;
   }
 
   async deleteTransaction(id: string): Promise<boolean> {
-    return this.transactions.delete(id);
+    const result = await db.delete(transactions).where(eq(transactions.id, id));
+    return result.rowCount > 0;
   }
 
   // Savings goal methods
   async getSavingsGoals(userId: string): Promise<SavingsGoal[]> {
-    return Array.from(this.savingsGoals.values())
-      .filter(goal => goal.userId === userId)
-      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+    return await db.select()
+      .from(savingsGoals)
+      .where(eq(savingsGoals.userId, userId))
+      .orderBy(savingsGoals.createdAt);
   }
 
   async createSavingsGoal(insertGoal: InsertSavingsGoal): Promise<SavingsGoal> {
-    const id = randomUUID();
-    const goal: SavingsGoal = {
+    const [goal] = await db.insert(savingsGoals).values({
       ...insertGoal,
-      id,
       targetAmount: insertGoal.targetAmount.toString(),
       currentAmount: (insertGoal.currentAmount || 0).toString(),
-      monthlyTarget: insertGoal.monthlyTarget?.toString() || null,
-      createdAt: new Date()
-    };
-    this.savingsGoals.set(id, goal);
+      monthlyTarget: insertGoal.monthlyTarget?.toString() || null
+    }).returning();
     return goal;
   }
 
   async updateSavingsGoal(id: string, updateData: Partial<InsertSavingsGoal>): Promise<SavingsGoal | undefined> {
-    const goal = this.savingsGoals.get(id);
-    if (!goal) return undefined;
+    const updateValues: any = { ...updateData };
+    if (updateData.targetAmount) updateValues.targetAmount = updateData.targetAmount.toString();
+    if (updateData.currentAmount !== undefined) updateValues.currentAmount = updateData.currentAmount.toString();
+    if (updateData.monthlyTarget) updateValues.monthlyTarget = updateData.monthlyTarget.toString();
 
-    const updated = {
-      ...goal,
-      ...updateData,
-      ...(updateData.targetAmount && { targetAmount: updateData.targetAmount.toString() }),
-      ...(updateData.currentAmount !== undefined && { currentAmount: updateData.currentAmount.toString() }),
-      ...(updateData.monthlyTarget && { monthlyTarget: updateData.monthlyTarget.toString() })
-    };
-    this.savingsGoals.set(id, updated);
-    return updated;
+    const [goal] = await db.update(savingsGoals)
+      .set(updateValues)
+      .where(eq(savingsGoals.id, id))
+      .returning();
+    return goal || undefined;
   }
 
   async deleteSavingsGoal(id: string): Promise<boolean> {
-    return this.savingsGoals.delete(id);
+    const result = await db.delete(savingsGoals).where(eq(savingsGoals.id, id));
+    return result.rowCount > 0;
   }
 
   // Recurring transaction methods
   async getRecurringTransactions(userId: string): Promise<RecurringTransaction[]> {
-    return Array.from(this.recurringTransactions.values())
-      .filter(transaction => transaction.userId === userId)
-      .sort((a, b) => new Date(a.nextDueDate).getTime() - new Date(b.nextDueDate).getTime());
+    return await db.select()
+      .from(recurringTransactions)
+      .where(eq(recurringTransactions.userId, userId))
+      .orderBy(recurringTransactions.nextDueDate);
   }
 
   async createRecurringTransaction(insertTransaction: InsertRecurringTransaction): Promise<RecurringTransaction> {
-    const id = randomUUID();
-    const transaction: RecurringTransaction = {
+    const [transaction] = await db.insert(recurringTransactions).values({
       ...insertTransaction,
-      id,
       amount: insertTransaction.amount.toString(),
-      nextDueDate: new Date(insertTransaction.nextDueDate),
-      isActive: true,
-      createdAt: new Date()
-    };
-    this.recurringTransactions.set(id, transaction);
+      nextDueDate: new Date(insertTransaction.nextDueDate)
+    }).returning();
     return transaction;
   }
 
   async updateRecurringTransaction(id: string, updateData: Partial<InsertRecurringTransaction>): Promise<RecurringTransaction | undefined> {
-    const transaction = this.recurringTransactions.get(id);
-    if (!transaction) return undefined;
+    const updateValues: any = { ...updateData };
+    if (updateData.amount) updateValues.amount = updateData.amount.toString();
+    if (updateData.nextDueDate) updateValues.nextDueDate = new Date(updateData.nextDueDate);
 
-    const updated = {
-      ...transaction,
-      ...updateData,
-      ...(updateData.amount && { amount: updateData.amount.toString() }),
-      ...(updateData.nextDueDate && { nextDueDate: new Date(updateData.nextDueDate) })
-    };
-    this.recurringTransactions.set(id, updated);
-    return updated;
+    const [transaction] = await db.update(recurringTransactions)
+      .set(updateValues)
+      .where(eq(recurringTransactions.id, id))
+      .returning();
+    return transaction || undefined;
   }
 
   async deleteRecurringTransaction(id: string): Promise<boolean> {
-    return this.recurringTransactions.delete(id);
+    const result = await db.delete(recurringTransactions).where(eq(recurringTransactions.id, id));
+    return result.rowCount > 0;
   }
 
   // Salary allocation methods
   async getSalaryAllocation(userId: string): Promise<SalaryAllocation | undefined> {
-    return this.salaryAllocations.get(userId);
+    const [allocation] = await db.select()
+      .from(salaryAllocations)
+      .where(eq(salaryAllocations.userId, userId));
+    return allocation || undefined;
   }
 
   async createOrUpdateSalaryAllocation(insertAllocation: InsertSalaryAllocation): Promise<SalaryAllocation> {
-    const existing = this.salaryAllocations.get(insertAllocation.userId);
-    const id = existing?.id || randomUUID();
+    const existing = await this.getSalaryAllocation(insertAllocation.userId);
     
-    const allocation: SalaryAllocation = {
+    const allocationData = {
       ...insertAllocation,
-      id,
       monthlySalary: insertAllocation.monthlySalary.toString(),
       essentials: insertAllocation.essentials.toString(),
       savings: insertAllocation.savings.toString(),
-      lifestyle: insertAllocation.lifestyle.toString(),
-      createdAt: existing?.createdAt || new Date()
+      lifestyle: insertAllocation.lifestyle.toString()
     };
-    
-    this.salaryAllocations.set(insertAllocation.userId, allocation);
-    return allocation;
+
+    if (existing) {
+      const [allocation] = await db.update(salaryAllocations)
+        .set(allocationData)
+        .where(eq(salaryAllocations.userId, insertAllocation.userId))
+        .returning();
+      return allocation;
+    } else {
+      const [allocation] = await db.insert(salaryAllocations)
+        .values(allocationData)
+        .returning();
+      return allocation;
+    }
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

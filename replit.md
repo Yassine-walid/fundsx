@@ -107,3 +107,21 @@ The application uses optimistic updates and proper error handling throughout the
 - **Build Scripts**: Separate build processes for client and server code
 
 The application is designed to be deployed on platforms supporting Node.js with PostgreSQL database connectivity, with particular optimization for Replit's environment including development tooling integration.
+
+## Recent Changes
+
+### Database Migration Completed (2025-01-28)
+- Successfully migrated from in-memory storage to PostgreSQL database
+- Updated all storage operations to use Drizzle ORM with type-safe database queries
+- Configured Neon serverless PostgreSQL database with environment variables
+- Added comprehensive demo data initialization including sample transactions and recurring payments
+- All database schema changes managed through `npm run db:push` for schema synchronization
+
+### Technical Implementation Details
+- **Database Configuration**: PostgreSQL tables created using Drizzle schema definitions
+- **Storage Layer**: Complete replacement of MemStorage with DatabaseStorage implementing IStorage interface
+- **Data Persistence**: All user data, transactions, savings goals, and recurring payments now persisted in database
+- **Demo Data**: Automatic initialization of sample data for testing and demonstration purposes
+- **Migration Command**: Use `npm run db:push` for any future schema changes
+
+The application now provides full data persistence with backup and recovery capabilities through the PostgreSQL database infrastructure.
