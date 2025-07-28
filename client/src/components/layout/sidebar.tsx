@@ -8,7 +8,8 @@ import {
   Calendar, 
   Settings, 
   HelpCircle,
-  TrendingUp
+  TrendingUp,
+  DollarSign
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ const navigation = [
   { name: "Salary Management", href: "/salary", icon: Wallet },
   { name: "Expenses", href: "/expenses", icon: Receipt },
   { name: "Savings Goals", href: "/savings", icon: Target },
+  { name: "Daily Budget", href: "/daily-budget", icon: DollarSign },
   { name: "Recurring", href: "/recurring", icon: RotateCcw },
   { name: "Calendar View", href: "/calendar", icon: Calendar },
 ];

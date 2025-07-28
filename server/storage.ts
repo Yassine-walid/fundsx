@@ -9,11 +9,17 @@ import {
   type InsertRecurringTransaction,
   type SalaryAllocation,
   type InsertSalaryAllocation,
+  type MonthlyBudget,
+  type InsertMonthlyBudget,
+  type SavingsGoalTransaction,
+  type InsertSavingsGoalTransaction,
   users,
   transactions,
   savingsGoals,
   recurringTransactions,
-  salaryAllocations
+  salaryAllocations,
+  monthlyBudgets,
+  savingsGoalTransactions
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, gte, lte } from "drizzle-orm";
@@ -46,6 +52,14 @@ export interface IStorage {
   // Salary allocation methods
   getSalaryAllocation(userId: string): Promise<SalaryAllocation | undefined>;
   createOrUpdateSalaryAllocation(allocation: InsertSalaryAllocation): Promise<SalaryAllocation>;
+
+  // Monthly budget methods
+  getMonthlyBudget(userId: string, month: number, year: number): Promise<MonthlyBudget | undefined>;
+  createOrUpdateMonthlyBudget(budget: InsertMonthlyBudget): Promise<MonthlyBudget>;
+  
+  // Savings goal transaction methods
+  getSavingsGoalTransactions(userId: string, goalId: string): Promise<SavingsGoalTransaction[]>;
+  addMoneyToSavingsGoal(goalTransaction: InsertSavingsGoalTransaction): Promise<SavingsGoalTransaction>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -327,6 +341,85 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return allocation;
     }
+  }
+
+  // Monthly budget methods
+  async getMonthlyBudget(userId: string, month: number, year: number): Promise<MonthlyBudget | undefined> {
+    const [budget] = await db.select()
+      .from(monthlyBudgets)
+      .where(
+        and(
+          eq(monthlyBudgets.userId, userId),
+          eq(monthlyBudgets.month, month),
+          eq(monthlyBudgets.year, year)
+        )
+      );
+    return budget || undefined;
+  }
+
+  async createOrUpdateMonthlyBudget(insertBudget: InsertMonthlyBudget): Promise<MonthlyBudget> {
+    const existing = await this.getMonthlyBudget(insertBudget.userId, insertBudget.month, insertBudget.year);
+    
+    const budgetData = {
+      ...insertBudget,
+      budgetAmount: insertBudget.budgetAmount.toString(),
+      spentAmount: (insertBudget.spentAmount || 0).toString()
+    };
+
+    if (existing) {
+      const [budget] = await db.update(monthlyBudgets)
+        .set(budgetData)
+        .where(eq(monthlyBudgets.id, existing.id))
+        .returning();
+      return budget;
+    } else {
+      const [budget] = await db.insert(monthlyBudgets)
+        .values(budgetData)
+        .returning();
+      return budget;
+    }
+  }
+
+  // Savings goal transaction methods
+  async getSavingsGoalTransactions(userId: string, goalId: string): Promise<SavingsGoalTransaction[]> {
+    return await db.select()
+      .from(savingsGoalTransactions)
+      .where(
+        and(
+          eq(savingsGoalTransactions.userId, userId),
+          eq(savingsGoalTransactions.savingsGoalId, goalId)
+        )
+      )
+      .orderBy(savingsGoalTransactions.createdAt);
+  }
+
+  async addMoneyToSavingsGoal(goalTransaction: InsertSavingsGoalTransaction): Promise<SavingsGoalTransaction> {
+    // Create the transaction record
+    const [transaction] = await db.insert(savingsGoalTransactions).values({
+      ...goalTransaction,
+      amount: goalTransaction.amount.toString()
+    }).returning();
+
+    // Update the savings goal current amount
+    const currentGoal = await db.select()
+      .from(savingsGoals)
+      .where(eq(savingsGoals.id, goalTransaction.savingsGoalId));
+
+    if (currentGoal.length > 0) {
+      const goal = currentGoal[0];
+      const currentAmount = parseFloat(goal.currentAmount || "0");
+      const transactionAmount = parseFloat(transaction.amount);
+      
+      const newAmount = goalTransaction.type === 'add' 
+        ? currentAmount + transactionAmount 
+        : Math.max(0, currentAmount - transactionAmount);
+
+      await db.update(savingsGoals)
+        .set({ currentAmount: newAmount.toString() })
+        .where(eq(savingsGoals.id, goalTransaction.savingsGoalId));
+    }
+
+    return transaction;
   }
 }
 

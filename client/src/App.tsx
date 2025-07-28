@@ -13,6 +13,7 @@ import Expenses from "@/pages/expenses";
 import SavingsGoals from "@/pages/savings-goals";
 import Recurring from "@/pages/recurring";
 import CalendarView from "@/pages/calendar-view";
+import DailyBudget from "@/pages/daily-budget";
 import NotFound from "@/pages/not-found";
 
 interface LayoutProps {
@@ -69,6 +70,12 @@ function Router() {
       <Route path="/calendar">
         <Layout title="Calendar View" subtitle="Visualize your expenses across time.">
           <CalendarView />
+        </Layout>
+      </Route>
+      
+      <Route path="/daily-budget">
+        <Layout title="Daily Budget" subtitle="Track your daily spending and budget progress.">
+          <DailyBudget />
         </Layout>
       </Route>
       

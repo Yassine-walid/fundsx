@@ -53,6 +53,26 @@ export const salaryAllocations = pgTable("salary_allocations", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const monthlyBudgets = pgTable("monthly_budgets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  month: integer("month").notNull(), // 1-12
+  year: integer("year").notNull(),
+  budgetAmount: decimal("budget_amount", { precision: 12, scale: 2 }).notNull(),
+  spentAmount: decimal("spent_amount", { precision: 12, scale: 2 }).default("0"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const savingsGoalTransactions = pgTable("savings_goal_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  savingsGoalId: varchar("savings_goal_id").notNull(),
+  type: text("type").notNull(), // 'add' or 'withdraw'
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -93,6 +113,21 @@ export const insertSalaryAllocationSchema = createInsertSchema(salaryAllocations
   lifestyle: z.number().min(0).max(100),
 });
 
+export const insertMonthlyBudgetSchema = createInsertSchema(monthlyBudgets).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  budgetAmount: z.number().positive(),
+  spentAmount: z.number().min(0).optional(),
+});
+
+export const insertSavingsGoalTransactionSchema = createInsertSchema(savingsGoalTransactions).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  amount: z.number().positive(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
@@ -103,3 +138,7 @@ export type RecurringTransaction = typeof recurringTransactions.$inferSelect;
 export type InsertRecurringTransaction = z.infer<typeof insertRecurringTransactionSchema>;
 export type SalaryAllocation = typeof salaryAllocations.$inferSelect;
 export type InsertSalaryAllocation = z.infer<typeof insertSalaryAllocationSchema>;
+export type MonthlyBudget = typeof monthlyBudgets.$inferSelect;
+export type InsertMonthlyBudget = z.infer<typeof insertMonthlyBudgetSchema>;
+export type SavingsGoalTransaction = typeof savingsGoalTransactions.$inferSelect;
+export type InsertSavingsGoalTransaction = z.infer<typeof insertSavingsGoalTransactionSchema>;

@@ -5,7 +5,9 @@ import {
   insertTransactionSchema,
   insertSavingsGoalSchema,
   insertRecurringTransactionSchema,
-  insertSalaryAllocationSchema
+  insertSalaryAllocationSchema,
+  insertMonthlyBudgetSchema,
+  insertSavingsGoalTransactionSchema
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -247,6 +249,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch dashboard stats" });
+    }
+  });
+
+  // Monthly budget routes
+  app.get("/api/monthly-budget/:month/:year", async (req, res) => {
+    try {
+      const month = parseInt(req.params.month);
+      const year = parseInt(req.params.year);
+      const budget = await storage.getMonthlyBudget(DEMO_USER_ID, month, year);
+      res.json(budget);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch monthly budget" });
+    }
+  });
+
+  app.post("/api/monthly-budget", async (req, res) => {
+    try {
+      const validatedData = insertMonthlyBudgetSchema.parse({
+        ...req.body,
+        userId: DEMO_USER_ID
+      });
+      const budget = await storage.createOrUpdateMonthlyBudget(validatedData);
+      res.json(budget);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ message: "Invalid budget data", errors: error.errors });
+      } else {
+        res.status(500).json({ message: "Failed to save budget" });
+      }
+    }
+  });
+
+  // Savings goal transaction routes
+  app.get("/api/savings-goals/:goalId/transactions", async (req, res) => {
+    try {
+      const goalId = req.params.goalId;
+      const transactions = await storage.getSavingsGoalTransactions(DEMO_USER_ID, goalId);
+      res.json(transactions);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch goal transactions" });
+    }
+  });
+
+  app.post("/api/savings-goals/:goalId/transactions", async (req, res) => {
+    try {
+      const goalId = req.params.goalId;
+      const validatedData = insertSavingsGoalTransactionSchema.parse({
+        ...req.body,
+        userId: DEMO_USER_ID,
+        savingsGoalId: goalId
+      });
+      const transaction = await storage.addMoneyToSavingsGoal(validatedData);
+      res.json(transaction);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ message: "Invalid transaction data", errors: error.errors });
+      } else {
+        res.status(500).json({ message: "Failed to add money to savings goal" });
+      }
     }
   });
 

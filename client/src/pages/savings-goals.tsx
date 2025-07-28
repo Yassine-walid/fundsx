@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Target, TrendingUp, Edit, Trash2 } from "lucide-react";
+import { Plus, Target, TrendingUp, Edit, Trash2, DollarSign, Minus } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,10 +22,19 @@ const formSchema = z.object({
   monthlyTarget: z.number().positive("Monthly target must be positive").optional(),
 });
 
+const moneyFormSchema = z.object({
+  amount: z.number().positive("Amount must be positive"),
+  description: z.string().optional(),
+});
+
 type FormData = z.infer<typeof formSchema>;
+type MoneyFormData = z.infer<typeof moneyFormSchema>;
 
 export default function SavingsGoals() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMoneyModalOpen, setIsMoneyModalOpen] = useState(false);
+  const [selectedGoal, setSelectedGoal] = useState<SavingsGoal | null>(null);
+  const [transactionType, setTransactionType] = useState<'add' | 'withdraw'>('add');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -41,6 +50,14 @@ export default function SavingsGoals() {
       targetAmount: 0,
       currentAmount: 0,
       monthlyTarget: 0,
+    },
+  });
+
+  const moneyForm = useForm<MoneyFormData>({
+    resolver: zodResolver(moneyFormSchema),
+    defaultValues: {
+      amount: 0,
+      description: "",
     },
   });
 
@@ -65,8 +82,54 @@ export default function SavingsGoals() {
     },
   });
 
+  const addMoneyMutation = useMutation({
+    mutationFn: ({ goalId, data }: { goalId: string; data: { type: 'add' | 'withdraw'; amount: number; description?: string } }) =>
+      fetch(`/api/savings-goals/${goalId}/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }).then(res => res.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/savings-goals"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      toast({
+        title: "Success",
+        description: `Money ${transactionType === 'add' ? 'added to' : 'withdrawn from'} savings goal`,
+      });
+      moneyForm.reset();
+      setIsMoneyModalOpen(false);
+      setSelectedGoal(null);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update savings goal",
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: FormData) => {
     createMutation.mutate(data);
+  };
+
+  const onMoneySubmit = (data: MoneyFormData) => {
+    if (selectedGoal) {
+      addMoneyMutation.mutate({
+        goalId: selectedGoal.id,
+        data: {
+          type: transactionType,
+          amount: data.amount,
+          description: data.description,
+        },
+      });
+    }
+  };
+
+  const openMoneyModal = (goal: SavingsGoal, type: 'add' | 'withdraw') => {
+    setSelectedGoal(goal);
+    setTransactionType(type);
+    setIsMoneyModalOpen(true);
   };
 
   const totalSavings = savingsGoals.reduce((sum, goal) => 
@@ -302,6 +365,24 @@ export default function SavingsGoals() {
                       </CardDescription>
                     </div>
                     <div className="flex gap-1">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 w-8 p-0 text-green-600 hover:text-green-700"
+                        onClick={() => openMoneyModal(goal, 'add')}
+                        title="Add money"
+                      >
+                        <DollarSign className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 w-8 p-0 text-orange-600 hover:text-orange-700"
+                        onClick={() => openMoneyModal(goal, 'withdraw')}
+                        title="Withdraw money"
+                      >
+                        <Minus className="h-4 w-4" />
+                      </Button>
                       <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                         <Edit className="h-4 w-4" />
                       </Button>
@@ -347,6 +428,75 @@ export default function SavingsGoals() {
           })}
         </div>
       )}
+
+      {/* Money Management Modal */}
+      <Dialog open={isMoneyModalOpen} onOpenChange={setIsMoneyModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {transactionType === 'add' ? 'Add Money' : 'Withdraw Money'} 
+              {selectedGoal && ` - ${selectedGoal.name}`}
+            </DialogTitle>
+          </DialogHeader>
+          <Form {...moneyForm}>
+            <form onSubmit={moneyForm.handleSubmit(onMoneySubmit)} className="space-y-4">
+              <FormField
+                control={moneyForm.control}
+                name="amount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Amount</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="100"
+                        {...field}
+                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={moneyForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description (optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Birthday money, Bonus, etc." {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsMoneyModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={addMoneyMutation.isPending}
+                  className={transactionType === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
+                >
+                  {addMoneyMutation.isPending 
+                    ? (transactionType === 'add' ? 'Adding...' : 'Withdrawing...') 
+                    : (transactionType === 'add' ? 'Add Money' : 'Withdraw Money')
+                  }
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
